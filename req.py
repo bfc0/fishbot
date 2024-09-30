@@ -16,6 +16,21 @@ async def get_data(token: str) -> dict[str, t.Any]:
             return data
 
 
+async def get_cart_by_id(_id: str, token: str) -> dict[str, t.Any]:
+    headers = {
+        'Authorization': f'Bearer {token}'
+    }
+    url = SITE_PREFIX+"/api/carts/"
+    params = {
+        "filters[userid][$eq]": _id
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, data=params, headers=headers) as response:
+            print(url)
+            payload = await response.json()
+            print(payload)
+
+
 async def get_fish_by_id(id: str, token: str) -> dict[str, t.Any]:
     headers = {
         'Authorization': f'Bearer {token}'
@@ -23,19 +38,19 @@ async def get_fish_by_id(id: str, token: str) -> dict[str, t.Any]:
     async with aiohttp.ClientSession() as session:
         async with session.get(f"http://localhost:1337/api/products/{id}?populate=picture", headers=headers) as response:
             data = await response.json()
-            print(data)
+        print(data)
 
-            fish_data = {
-                "id": data["data"]["id"],
-                "title": data["data"]["attributes"]["title"],
-                "description": data["data"]["attributes"]["description"],
-                "price": data["data"]["attributes"]["price"],
-                "picture": data["data"]["attributes"]["picture"]["data"][0]["attributes"]["url"]
-            }
-            pic_url = SITE_PREFIX+fish_data["picture"]
-            print(f"{pic_url=}")
-            fish_data["picture"] = await get_picture(pic_url, session)
-            return fish_data
+        fish_data = {
+            "id": data["data"]["id"],
+            "title": data["data"]["attributes"]["title"],
+            "description": data["data"]["attributes"]["description"],
+            "price": data["data"]["attributes"]["price"],
+            "picture": data["data"]["attributes"]["picture"]["data"][0]["attributes"]["url"]
+        }
+        pic_url = SITE_PREFIX+fish_data["picture"]
+        print(f"{pic_url=}")
+        fish_data["picture"] = await get_picture(pic_url, session)
+        return fish_data
 
 
 async def get_picture(url: str, session: aiohttp.ClientSession) -> bytes:
