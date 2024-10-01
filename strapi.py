@@ -12,6 +12,14 @@ class Cart:
     products: list
 
 
+@dataclass
+class Product:
+    id: str
+    title: str
+    description: str
+    price: float
+
+
 class ApiError(Exception):
     pass
 
@@ -22,14 +30,14 @@ class Strapi:
         self.base_url = base_url
         self._session = aiohttp.ClientSession()
 
-    async def add_to_cart(self, cart_id: str, product_id: str) -> dict[str, t.Any]:
+    async def add_to_cart(self, cart: Cart, product_id: str, amount: int) -> dict[str, t.Any]:
         headers = self.generate_headers()
         url = self.base_url + f"/api/cart-items"
         params = {
             "data": {
                 "product": product_id,
-                "amount": 1,
-                "cart": cart_id
+                "amount": amount,
+                "cart": cart.id
             },
             "status": "published"
         }
@@ -49,7 +57,6 @@ class Strapi:
             payload = await response.json()
             print(f"{payload=}")
             if not payload.get("data"):
-                print("creating cart")
                 logging.debug("Cart not found, creating one")
                 cart = await self.create_cart_for(userid)
                 return cart

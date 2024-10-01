@@ -1,3 +1,4 @@
+import logging
 from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputFile
 from aiogram.fsm.storage.redis import RedisStorage
@@ -25,24 +26,32 @@ async def back_to_start(callback: CallbackQuery, state: FSMContext, context: dic
     await start(callback.message, state, context)
 
 
+@router.callback_query(UserStates.handling_description)
+async def add_product_to_cart(callback: CallbackQuery, state: FSMContext, context: dict):
+    logging.debug("Adding product to cart")
+    fish_id, amount = callback.data.split(":")
+    await callback.answer("Added to cart")
+    await callback.message.answer(f"{fish_id}:  {amount}")
+    userid = str(callback.from_user.id)
+    strapi = context["strapi"]
+    cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
+    logging.debug(f"{cart=}")
+    result = await strapi.add_to_cart(cart=cart, product_id=fish_id, amount=amount)
+    logging.debug(f"{result=}")
+
+
 @router.callback_query(F.data.startswith("fish_"))
 async def menu_cb(callback: CallbackQuery, state: FSMContext, context: dict):
     fish_id = callback.data.replace("fish_", "")
     strapi: Strapi = context["strapi"]
     fish_data = await strapi.get_fish_by_id(fish_id)
 
-    userid = str(callback.from_user.id)
-    cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
-    print(f"{cart=}")
-    result = await strapi.add_to_cart(cart.id, fish_id)
-    print(result)
-
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="1", callback_data="buy_1"),
-                InlineKeyboardButton(text="5", callback_data="buy_5"),
-                InlineKeyboardButton(text="10", callback_data="buy_10"),
+                InlineKeyboardButton(text="1", callback_data=f"{fish_id}:1"),
+                InlineKeyboardButton(text="5", callback_data=f"{fish_id}:5"),
+                InlineKeyboardButton(text="10", callback_data=f"{fish_id}:10"),
             ],
             [InlineKeyboardButton(text="To Cart", callback_data="view_cart")],
             [InlineKeyboardButton(text="Back", callback_data="start")],
@@ -95,6 +104,8 @@ async def main():
     bot = Bot(token=tg_token)
     dp = Dispatcher(storage=storage, context=context)
     dp.include_router(router)
+    logging.basicConfig(level=logging.DEBUG)
+    logging.debug("Starting bot")
     await dp.start_polling(bot)
 
 
