@@ -8,7 +8,7 @@ from aiogram.methods.delete_message import DeleteMessage
 import redis.asyncio as redis
 import asyncio
 from environs import Env
-from strapi import Strapi
+from strapi import Cart, Strapi
 
 router = Router()
 
@@ -29,24 +29,29 @@ async def back_to_start(callback: CallbackQuery, state: FSMContext, context: dic
 async def menu_cb(callback: CallbackQuery, state: FSMContext, context: dict):
     fish_id = callback.data.replace("fish_", "")
     strapi: Strapi = context["strapi"]
-    print(f"{fish_id=}")
     fish_data = await strapi.get_fish_by_id(fish_id)
 
     userid = str(callback.from_user.id)
-    cart = await strapi.get_create_cart_by_id(userid=userid)
-    print(cart)
-    cart_id = cart["data"][0]["id"]
-    result = await strapi.add_to_cart(cart_id, fish_id)
+    cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
+    print(f"{cart=}")
+    result = await strapi.add_to_cart(cart.id, fish_id)
+    print(result)
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="1", callback_data="buy_1"),
+                InlineKeyboardButton(text="5", callback_data="buy_5"),
+                InlineKeyboardButton(text="10", callback_data="buy_10"),
+            ],
+            [InlineKeyboardButton(text="To Cart", callback_data="view_cart")],
             [InlineKeyboardButton(text="Back", callback_data="start")],
         ]
     )
 
-    await callback.message.edit_text(fish_data["description"], reply_markup=kb)
+    await callback.message.edit_text(fish_data["description"])
+    await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"), reply_markup=kb)
     await callback.answer("")
-    await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"))
     await state.set_state(UserStates.handling_description)
 
 
@@ -64,11 +69,11 @@ async def start(message: types.Message, state: FSMContext, context: dict) -> Non
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=fish["title"],
-                                  callback_data=f"fish_{fish['id']}")] for fish in fish_data
+                                  callback_data=f"fish_{fish['documentId']}")] for fish in fish_data
         ]
     )
 
-    await message.reply("hello ", reply_markup=kb)
+    await message.answer("Welcome to the shop!", reply_markup=kb)
     await state.set_state(UserStates.handling_menu)
 
 
