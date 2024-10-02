@@ -1,4 +1,6 @@
+from __future__ import annotations
 from dataclasses import dataclass
+from decimal import Decimal
 import logging
 import aiohttp
 import typing as t
@@ -9,15 +11,25 @@ DEFAULT_URL = "http://localhost:1337"
 class Cart:
     id: str
     userid: str
-    products: list
+    cart_items: list[CartItem]
+
+    def get_product_by_id(self, product_id: str) -> t.Optional[CartItem]:
+        return next((item for item in self.cart_items if item.product_id == product_id), None)
+
+    def total(self) -> Decimal:
+        return sum(item.total() for item in self.cart_items)
 
 
 @dataclass
-class Product:
+class CartItem:
     id: str
-    title: str
-    description: str
-    price: float
+    product_id: str
+    amount: Decimal
+    name: str
+    price: Decimal
+
+    def total(self) -> Decimal:
+        return self.amount * self.price
 
 
 class ApiError(Exception):
@@ -30,39 +42,72 @@ class Strapi:
         self.base_url = base_url
         self._session = aiohttp.ClientSession()
 
-    async def add_to_cart(self, cart: Cart, product_id: str, amount: int) -> dict[str, t.Any]:
+    async def add_to_cart(self, cart: Cart, product_id: str, amount: Decimal) -> dict[str, t.Any]:
         headers = self.generate_headers()
         url = self.base_url + f"/api/cart-items"
+
+        logging.debug(f"inside add to cart, {cart=}")
+        logging.debug(f"{product_id=}, {amount=}")
+        if cart_item := cart.get_product_by_id(product_id):
+            logging.debug(f"{cart_item=}")
+            cart_item.amount += amount
+            params = {
+                "data": {
+                    "product": cart_item.product_id,
+                    "amount": str(cart_item.amount),
+                    "cart": cart.id
+                }
+            }
+            async with self.session.put(f"{url}/{cart_item.id}", json=params, headers=headers) as response:
+                logging.debug(f"{response=}")
+                return
+
         params = {
             "data": {
                 "product": product_id,
-                "amount": amount,
+                "amount": str(amount),
                 "cart": cart.id
-            },
-            "status": "published"
+            }
         }
         async with self.session.post(url, json=params, headers=headers) as response:
-            # print(response)
             payload = await response.json()
-            print(payload)
+            logging.debug(f"{payload=}")
             return payload
+
+    async def delete_from_cart(self, cart_item_id: str) -> dict[str, t.Any]:
+        headers = self.generate_headers()
+        url = self.base_url + f"/api/cart-items/{cart_item_id}"
+
+        async with self.session.delete(url, headers=headers) as response:
+            logging.debug(f"{response=}")
 
     async def get_create_cart_by_id(self, userid: str) -> dict[str, t.Any]:
         headers = self.generate_headers()
-        url = self.base_url + "/api/carts/?populate=*"
+        url = self.base_url + "/api/carts/"
         params = {
-            "filters[userid][$eq]": userid
+            "filters[userid][$eq]": userid,
+            "populate": "cart_items.product"
         }
-        async with self.session.get(url, json=params, headers=headers) as response:
+
+        async with self.session.get(url, params=params, headers=headers) as response:
             payload = await response.json()
-            print(f"{payload=}")
             if not payload.get("data"):
                 logging.debug("Cart not found, creating one")
                 cart = await self.create_cart_for(userid)
                 return cart
 
-            products = payload["data"][0].get("products", [])
-            return Cart(id=payload["data"][0]["id"], userid=userid, products=products)
+            products = []
+            if items_data := payload["data"][0].get("cart_items"):
+                logging.debug(f"{items_data=}")
+                products = [
+                    CartItem(id=item["documentId"],
+                             product_id=item["product"]["documentId"],
+                             amount=Decimal(item["amount"]),
+                             name=item["product"]["title"],
+                             price=item["product"]["price"])
+                    for item in items_data]
+
+            return Cart(id=payload["data"][0]["documentId"], userid=userid, cart_items=products)
 
     async def create_cart_for(self, userid: str):
         headers = self.generate_headers()
@@ -77,7 +122,7 @@ class Strapi:
             if not payload.get("data"):
                 raise ApiError("Failed to create cart")
             cart_data = payload["data"]
-            return Cart(id=cart_data["id"], userid=cart_data["userid"], products=[])
+            return Cart(id=cart_data["documentId"], userid=cart_data["userid"], cart_items=[])
 
     async def get_products(self) -> dict[str, t.Any]:
         headers = self.generate_headers()
@@ -93,20 +138,18 @@ class Strapi:
 
         async with self.session.get(url, headers=headers) as response:
             data = await response.json()
-            print(f"fish {data=}")
 
-            fish_data = {
+            product_data = {
                 "id": data["data"]["id"],
                 "documentId": data["data"]["documentId"],
                 "title": data["data"]["title"],
                 "description": data["data"]["description"],
                 "price": data["data"]["price"],
-                # "image": data["data"]["image"]["data"][0]["attributes"]["url"]
-                "image": data['data']['image']['formats']['medium']['url'],
+                "image": data['data']['image']['formats']['small']['url'],
             }
-            fish_data["picture"] = await self.get_picture(self.base_url + fish_data["image"])
+            product_data["picture"] = await self.get_picture(self.base_url + product_data["image"])
 
-            return fish_data
+            return product_data
 
     async def get_picture(self, url: str) -> bytes:
         async with self.session.get(url) as response:
@@ -118,6 +161,10 @@ class Strapi:
             self._session = aiohttp.ClientSession()
 
         return self._session
+
+    async def close(self):
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
 
     def generate_headers(self, **kwargs) -> dict[str, str]:
         headers = {
