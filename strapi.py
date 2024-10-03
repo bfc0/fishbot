@@ -4,7 +4,6 @@ from decimal import Decimal
 import logging
 import aiohttp
 import typing as t
-DEFAULT_URL = "http://localhost:1337"
 
 
 @dataclass
@@ -37,7 +36,7 @@ class ApiError(Exception):
 
 
 class Strapi:
-    def __init__(self, token: str, base_url: str = DEFAULT_URL):
+    def __init__(self, token: str, base_url: str):
         self.token = token
         self.base_url = base_url
         self._session = aiohttp.ClientSession()

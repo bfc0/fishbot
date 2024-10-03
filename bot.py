@@ -10,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import redis.asyncio as redis
 import asyncio
+import argparse
 from environs import Env
 from strapi import Cart, Strapi
 
@@ -25,7 +26,7 @@ class UserStates(StatesGroup):
 
 
 @router.callback_query(F.data == "start")
-async def back_to_start(callback: CallbackQuery, state: FSMContext, context: dict):
+async def return_to_start(callback: CallbackQuery, state: FSMContext, context: dict):
     await callback.answer("")
     await callback.message.delete()
     await start(callback.message, state, context)
@@ -41,8 +42,8 @@ async def show_cart(callback: CallbackQuery, state: FSMContext, context: dict, b
     await callback.message.delete()
     builder = InlineKeyboardBuilder()
     for item in cart.cart_items:
-        builder.button(
-            text=f"Remove {item.name}:  {item.amount}", callback_data=f"remove_{item.id}")
+        builder.button(text=f"Remove {item.name}:  {item.amount}",
+                       callback_data=f"remove_{item.id}")
 
     (builder
      .button(text="Menu", callback_data="start")
@@ -154,10 +155,14 @@ async def main():
     redis_host = env.str("REDIS_HOST")
     tg_token = env.str("TG_TOKEN")
     cms_token = env.str("CMS_TOKEN")
+    cms_url = env.str("CMS_URL", "http://localhost:1337")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--loglevel", default="INFO", help="log level")
+    args = parser.parse_args()
+
     context = {
         "cms_token": cms_token,
-        "strapi": Strapi(token=cms_token),
-
+        "strapi": Strapi(token=cms_token, base_url=cms_url),
     }
 
     client = redis.Redis.from_url(f"redis://{redis_host}")
@@ -166,7 +171,7 @@ async def main():
     bot = Bot(token=tg_token)
     dp = Dispatcher(storage=storage, context=context)
     dp.include_router(router)
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=args.loglevel.upper())
     logging.debug("Starting bot")
 
     try:
