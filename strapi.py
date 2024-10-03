@@ -42,6 +42,18 @@ class Strapi:
         self.base_url = base_url
         self._session = aiohttp.ClientSession()
 
+    async def set_email(self, userid: str, email: str) -> bool:
+        cart = await self.get_create_cart_by_id(userid=userid)
+        headers = self.generate_headers()
+        url = self.base_url + f"/api/carts/{cart.id}"
+        params = {
+            "data": {
+                "email": email
+            }
+        }
+        async with self.session.put(url, json=params, headers=headers) as response:
+            return response.status in (200, 204)
+
     async def add_to_cart(self, cart: Cart, product_id: str, amount: Decimal) -> dict[str, t.Any]:
         headers = self.generate_headers()
         url = self.base_url + f"/api/cart-items"
@@ -81,7 +93,7 @@ class Strapi:
         async with self.session.delete(url, headers=headers) as response:
             logging.debug(f"{response=}")
 
-    async def get_create_cart_by_id(self, userid: str) -> dict[str, t.Any]:
+    async def get_create_cart_by_id(self, userid: str) -> Cart:
         headers = self.generate_headers()
         url = self.base_url + "/api/carts/"
         params = {
@@ -132,7 +144,7 @@ class Strapi:
             data = await response.json()
             return data
 
-    async def get_fish_by_id(self, id: str) -> dict[str, t.Any]:
+    async def get_product_by_id(self, id: str) -> dict[str, t.Any]:
         headers = self.generate_headers()
         url = self.base_url + f"/api/products/{id}?populate=image"
 

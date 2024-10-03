@@ -1,12 +1,13 @@
 from decimal import Decimal
 import logging
+import re
 from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputFile
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.methods.delete_message import DeleteMessage
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import redis.asyncio as redis
 import asyncio
 from environs import Env
@@ -20,11 +21,13 @@ class UserStates(StatesGroup):
     handling_menu = State()
     handling_description = State()
     in_cart = State()
+    waiting_email = State()
 
 
 @router.callback_query(F.data == "start")
 async def back_to_start(callback: CallbackQuery, state: FSMContext, context: dict):
     await callback.answer("")
+    await callback.message.delete()
     await start(callback.message, state, context)
 
 
@@ -35,73 +38,86 @@ async def show_cart(callback: CallbackQuery, state: FSMContext, context: dict, b
     await callback.answer("hello")
     logging.debug(f"message= {callback.message}")
 
-    await callback.message.answer("Cart:")
-    await callback.message.answer(str(cart))
-    await bot.delete_message(chat_id=callback.message.chat.id, message_id=callback.message.message_id-1)
     await callback.message.delete()
-
+    builder = InlineKeyboardBuilder()
     for item in cart.cart_items:
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Remove",
-                                      callback_data=f"remove_{item.id}")]
-            ]
-        )
-        await callback.message.answer(f"{item.name}:  {item.amount}", reply_markup=kb)
+        builder.button(
+            text=f"Remove {item.name}:  {item.amount}", callback_data=f"remove_{item.id}")
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Checkout", callback_data="checkout")],
-            [InlineKeyboardButton(text="Products", callback_data="start")],
-        ]
-    )
-    await callback.message.answer(f"Total:  {cart.total()}", reply_markup=kb)
+    (builder
+     .button(text="Menu", callback_data="start")
+     .button(text="Checkout", callback_data="ask_email")
+     .adjust(1))
+    await callback.message.answer(f"Total:  {cart.total()} roobels", reply_markup=builder.as_markup())
     await state.set_state(UserStates.in_cart)
+
+
+@router.callback_query(F.data == "ask_email")
+async def ask_email(callback: CallbackQuery, state: FSMContext):
+    await callback.answer("")
+    await callback.message.answer("Please enter your email")
+    await state.set_state(UserStates.waiting_email)
+
+
+@router.message(UserStates.waiting_email)
+async def handle_email(message: types.Message, state: FSMContext, context: dict):
+    email = message.text
+    if not validate_email(email):
+        await message.answer("Invalid email")
+        await message.answer("Please enter your email")
+        return
+
+    if await context["strapi"].set_email(userid=str(message.from_user.id), email=email):
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(
+                text="Menu", callback_data="start")]]
+        )
+        await message.answer("Thank you", reply_markup=kb)
+        await state.set_state(UserStates.handling_menu)
+        return
+    await message.answer("Failed to set email")
 
 
 @router.callback_query(F.data.startswith("remove_"))
 async def delete_from_cart(callback: CallbackQuery, state: FSMContext, context: dict, bot: Bot):
     item_id = callback.data.replace("remove_", "")
     await context["strapi"].delete_from_cart(cart_item_id=item_id)
+    await callback.answer()
     await show_cart(callback, state, context, bot)
 
 
 @router.callback_query(UserStates.handling_description)
-async def add_product_to_cart(callback: CallbackQuery, state: FSMContext, context: dict):
+async def add_product_to_cart(callback: CallbackQuery, state: FSMContext, context: dict, bot: Bot):
     logging.debug("Adding product to cart")
     fish_id, amount = callback.data.split(":")
+
     await callback.answer("Added to cart")
-    await callback.message.answer(f"{fish_id}:  {amount}")
     userid = str(callback.from_user.id)
     strapi: Strapi = context["strapi"]
     cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
     logging.debug(f"{cart=}")
     result = await strapi.add_to_cart(cart=cart, product_id=fish_id, amount=Decimal(amount))
     logging.debug(f"{result=}")
+    await show_cart(callback, state, context, bot)
 
 
 @router.callback_query(F.data.startswith("fish_"))
-async def menu_cb(callback: CallbackQuery, state: FSMContext, context: dict):
+async def show_product(callback: CallbackQuery, state: FSMContext, context: dict):
     fish_id = callback.data.replace("fish_", "")
     strapi: Strapi = context["strapi"]
-    fish_data = await strapi.get_fish_by_id(fish_id)
+    fish_data = await strapi.get_product_by_id(fish_id)
 
     logging.debug(f"message (in menu_cb) {callback.message}")
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="1", callback_data=f"{fish_id}:1"),
-                InlineKeyboardButton(text="5", callback_data=f"{fish_id}:5"),
-                InlineKeyboardButton(text="10", callback_data=f"{fish_id}:10"),
-            ],
-            [InlineKeyboardButton(text="To Cart", callback_data="view_cart")],
-            [InlineKeyboardButton(text="Back", callback_data="start")],
-        ]
-    )
+    builder = (InlineKeyboardBuilder()
+               .button(text="1", callback_data=f"{fish_id}:1")
+               .button(text="5", callback_data=f"{fish_id}:5")
+               .button(text="10", callback_data=f"{fish_id}:10")
+               .row(InlineKeyboardButton(text="To Cart", callback_data="view_cart"))
+               .row(InlineKeyboardButton(text="Back", callback_data="start")))
 
-    await callback.message.edit_text(fish_data["description"])
-    await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"), reply_markup=kb)
     await callback.answer("")
+    await callback.message.delete()
+    await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"), reply_markup=builder.as_markup(), caption=fish_data["description"])
     await state.set_state(UserStates.handling_description)
 
 
@@ -125,6 +141,11 @@ async def start(message: types.Message, state: FSMContext, context: dict) -> Non
 
     await message.answer("Welcome to the shop!", reply_markup=kb)
     await state.set_state(UserStates.handling_menu)
+
+
+def validate_email(email: str) -> bool:
+    pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    return bool(re.match(pattern, email))
 
 
 async def main():
