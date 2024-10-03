@@ -167,7 +167,7 @@ class Strapi:
             return await response.read()
 
     @property
-    def session(self):
+    def session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
 
@@ -180,7 +180,6 @@ class Strapi:
     def generate_headers(self, **kwargs) -> dict[str, str]:
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
         }
         for key, value in kwargs.items():
             headers[key] = str(value)

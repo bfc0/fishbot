@@ -69,11 +69,11 @@ async def handle_email(message: types.Message, state: FSMContext, context: dict)
         return
 
     if await context["strapi"].set_email(userid=str(message.from_user.id), email=email):
-        kb = InlineKeyboardMarkup(
+        markup = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(
                 text="Menu", callback_data="start")]]
         )
-        await message.answer("Thank you", reply_markup=kb)
+        await message.answer("Thank you", reply_markup=markup)
         await state.set_state(UserStates.handling_menu)
         return
     await message.answer("Failed to set email")
@@ -133,14 +133,14 @@ async def start(message: types.Message, state: FSMContext, context: dict) -> Non
     fish_data = response["data"]
     logging.debug(f"{fish_data=}")
 
-    kb = InlineKeyboardMarkup(
+    markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=fish["title"],
                                   callback_data=f"fish_{fish['documentId']}")] for fish in fish_data
         ]
     )
 
-    await message.answer("Welcome to the shop!", reply_markup=kb)
+    await message.answer("Welcome to the shop!", reply_markup=markup)
     await state.set_state(UserStates.handling_menu)
 
 
