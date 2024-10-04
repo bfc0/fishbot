@@ -69,7 +69,8 @@ class Strapi:
                     "cart": cart.id
                 }
             }
-            async with self.session.put(f"{url}/{cart_item.id}", json=params, headers=self.headers) as response:
+            async with self.session.put(f"{url}/{cart_item.id}",
+                                        json=params, headers=self.headers, raise_for_status=True) as response:
                 logging.debug(f"{response=}")
                 return
 
@@ -80,7 +81,7 @@ class Strapi:
                 "cart": cart.id
             }
         }
-        async with self.session.post(url, json=params, headers=self.headers) as response:
+        async with self.session.post(url, json=params, headers=self.headers, raise_for_status=True) as response:
             payload = await response.json()
             logging.debug(f"{payload=}")
             return payload
@@ -98,7 +99,8 @@ class Strapi:
             "populate": "cart_items.product"
         }
 
-        async with self.session.get(url, params=params, headers=self.headers) as response:
+        async with self.session.get(
+                url, params=params, headers=self.headers, raise_for_status=True) as response:
             payload = await response.json()
             if not payload.get("data"):
                 logging.debug("Cart not found, creating one")
@@ -125,7 +127,8 @@ class Strapi:
                 "userid": str(userid)
             }
         }
-        async with self.session.post(url, json=params, headers=self.headers) as response:
+        async with self.session.post(
+                url, json=params, headers=self.headers, raise_for_status=True) as response:
             payload = await response.json()
             if not payload.get("data"):
                 raise ApiError("Failed to create cart")
@@ -135,7 +138,7 @@ class Strapi:
     async def get_products(self) -> dict[str, t.Any]:
         url = f"{self.base_url}/api/products"
 
-        async with self.session.get(url, headers=self.headers) as response:
+        async with self.session.get(url, headers=self.headers, raise_for_status=True) as response:
             data = await response.json()
             return data
 
@@ -143,7 +146,7 @@ class Strapi:
         url = f"{self.base_url}/api/products/{id}"
         params = {"populate": "image"}
 
-        async with self.session.get(url, params=params, headers=self.headers) as response:
+        async with self.session.get(url, params=params, headers=self.headers, raise_for_status=True) as response:
             data = await response.json()
 
             product_data = {

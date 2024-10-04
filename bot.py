@@ -1,3 +1,4 @@
+from copy import copy
 from decimal import Decimal
 import logging
 import re
@@ -8,6 +9,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+import aiohttp
 import redis.asyncio as redis
 import asyncio
 import argparse
@@ -35,7 +37,12 @@ async def return_to_start(callback: CallbackQuery, state: FSMContext, context: d
 @router.callback_query(F.data == "view_cart")
 async def show_cart(callback: CallbackQuery, state: FSMContext, context: dict, bot: Bot):
     logging.debug("show cart")
-    cart = await context["strapi"].get_create_cart_by_id(userid=str(callback.from_user.id))
+    try:
+        cart = await context["strapi"].get_create_cart_by_id(userid=str(callback.from_user.id))
+    except aiohttp.ClientError:
+        await show_error(callback, "Failed to get cart", "view_cart")
+        return
+
     await callback.answer("hello")
     logging.debug(f"message= {callback.message}")
 
@@ -82,7 +89,12 @@ async def handle_email(message: types.Message, state: FSMContext, context: dict)
 @router.callback_query(F.data.startswith("remove_"))
 async def delete_from_cart(callback: CallbackQuery, state: FSMContext, context: dict, bot: Bot):
     item_id = callback.data.replace("remove_", "")
-    await context["strapi"].delete_from_cart(cart_item_id=item_id)
+    try:
+        await context["strapi"].delete_from_cart(cart_item_id=item_id)
+    except aiohttp.ClientError:
+        await show_error(callback, "Failed to delete from cart", "view_cart", button_text="Back to cart")
+        return
+
     await callback.answer()
     await show_cart(callback, state, context, bot)
 
@@ -90,23 +102,32 @@ async def delete_from_cart(callback: CallbackQuery, state: FSMContext, context: 
 @router.callback_query(UserStates.handling_description)
 async def add_product_to_cart(callback: CallbackQuery, state: FSMContext, context: dict, bot: Bot):
     logging.debug("Adding product to cart")
-    fish_id, amount = callback.data.split(":")
+    fish_id, amount = copy(callback.data).split(":")
 
     await callback.answer("Added to cart")
     userid = str(callback.from_user.id)
     strapi: Strapi = context["strapi"]
-    cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
-    logging.debug(f"{cart=}")
-    result = await strapi.add_to_cart(cart=cart, product_id=fish_id, amount=Decimal(amount))
+    try:
+        cart: Cart = await strapi.get_create_cart_by_id(userid=userid)
+        logging.debug(f"{cart=}")
+        result = await strapi.add_to_cart(cart=cart, product_id=fish_id, amount=Decimal(amount))
+    except aiohttp.ClientError:
+        await show_error(callback, "Failed to add to cart", "view_cart", button_text="Back to cart")
+        return
+
     logging.debug(f"{result=}")
     await show_cart(callback, state, context, bot)
 
 
 @router.callback_query(F.data.startswith("fish_"))
 async def show_product(callback: CallbackQuery, state: FSMContext, context: dict):
-    fish_id = callback.data.replace("fish_", "")
+    fish_id = copy(callback.data).replace("fish_", "")
     strapi: Strapi = context["strapi"]
-    fish_data = await strapi.get_product_by_id(fish_id)
+    try:
+        fish_data = await strapi.get_product_by_id(fish_id)
+    except aiohttp.ClientError:
+        await show_error(callback, "Failed to get fish", callback.data)
+        return
 
     logging.debug(f"message (in menu_cb) {callback.message}")
     builder = (InlineKeyboardBuilder()
@@ -124,10 +145,15 @@ async def show_product(callback: CallbackQuery, state: FSMContext, context: dict
 
 @router.message(CommandStart())
 async def start(message: types.Message, state: FSMContext, context: dict) -> None:
-
-    response = await context["strapi"].get_products()
+    keyboard = InlineKeyboardBuilder().button(
+        text="Retry", callback_data="start").as_markup()
+    try:
+        response = await context["strapi"].get_products()
+    except aiohttp.ClientError:
+        await message.answer("Failed to get fish", reply_markup=keyboard)
+        return
     if "data" not in response:
-        await message.answer("Out of fish :(")
+        await message.answer("Out of fish :(", reply_markup=keyboard)
         return
 
     fish_data = response["data"]
@@ -142,6 +168,15 @@ async def start(message: types.Message, state: FSMContext, context: dict) -> Non
 
     await message.answer("Welcome to the shop!", reply_markup=markup)
     await state.set_state(UserStates.handling_menu)
+
+
+async def show_error(callback: CallbackQuery, error_message: str, callback_data: str, button_text="Retry"):
+    logging.error(f"Error occurred: {error_message}")
+    keyboard = InlineKeyboardBuilder().button(
+        text=button_text, callback_data=callback_data).as_markup()
+    await callback.answer(error_message)
+    await callback.message.answer(error_message, reply_markup=keyboard)
+    await callback.message.delete()
 
 
 def validate_email(email: str) -> bool:
