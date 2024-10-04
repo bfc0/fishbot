@@ -28,8 +28,8 @@ class UserStates(StatesGroup):
 @router.callback_query(F.data == "start")
 async def return_to_start(callback: CallbackQuery, state: FSMContext, context: dict):
     await callback.answer("")
-    await callback.message.delete()
     await start(callback.message, state, context)
+    await callback.message.delete()
 
 
 @router.callback_query(F.data == "view_cart")
@@ -39,7 +39,6 @@ async def show_cart(callback: CallbackQuery, state: FSMContext, context: dict, b
     await callback.answer("hello")
     logging.debug(f"message= {callback.message}")
 
-    await callback.message.delete()
     builder = InlineKeyboardBuilder()
     for item in cart.cart_items:
         builder.button(text=f"Remove {item.name}:  {item.amount}",
@@ -49,7 +48,8 @@ async def show_cart(callback: CallbackQuery, state: FSMContext, context: dict, b
      .button(text="Menu", callback_data="start")
      .button(text="Checkout", callback_data="ask_email")
      .adjust(1))
-    await callback.message.answer(f"Total:  {cart.total()} roobels", reply_markup=builder.as_markup())
+    await callback.message.answer(f"Total:  {cart.get_total_price()} roobels", reply_markup=builder.as_markup())
+    await callback.message.delete()
     await state.set_state(UserStates.in_cart)
 
 
@@ -117,8 +117,8 @@ async def show_product(callback: CallbackQuery, state: FSMContext, context: dict
                .row(InlineKeyboardButton(text="Back", callback_data="start")))
 
     await callback.answer("")
-    await callback.message.delete()
     await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"), reply_markup=builder.as_markup(), caption=fish_data["description"])
+    await callback.message.delete()
     await state.set_state(UserStates.handling_description)
 
 
