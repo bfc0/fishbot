@@ -40,23 +40,23 @@ class Strapi:
         self.token = token
         self.base_url = base_url
         self._session = aiohttp.ClientSession()
+        self.headers = {
+            "Authorization": f"Bearer {self.token}",
+        }
 
     async def set_email(self, userid: str, email: str) -> bool:
         cart = await self.get_create_cart_by_id(userid=userid)
-        headers = self.generate_headers()
         url = self.base_url + f"/api/carts/{cart.id}"
         params = {
             "data": {
                 "email": email
             }
         }
-        async with self.session.put(url, json=params, headers=headers) as response:
+        async with self.session.put(url, json=params, headers=self.headers) as response:
             return response.status in (200, 204)
 
     async def add_to_cart(self, cart: Cart, product_id: str, amount: Decimal) -> dict[str, t.Any]:
-        headers = self.generate_headers()
         url = self.base_url + f"/api/cart-items"
-
         logging.debug(f"inside add to cart, {cart=}")
         logging.debug(f"{product_id=}, {amount=}")
         if cart_item := cart.get_product_by_id(product_id):
@@ -69,7 +69,7 @@ class Strapi:
                     "cart": cart.id
                 }
             }
-            async with self.session.put(f"{url}/{cart_item.id}", json=params, headers=headers) as response:
+            async with self.session.put(f"{url}/{cart_item.id}", json=params, headers=self.headers) as response:
                 logging.debug(f"{response=}")
                 return
 
@@ -80,27 +80,25 @@ class Strapi:
                 "cart": cart.id
             }
         }
-        async with self.session.post(url, json=params, headers=headers) as response:
+        async with self.session.post(url, json=params, headers=self.headers) as response:
             payload = await response.json()
             logging.debug(f"{payload=}")
             return payload
 
     async def delete_from_cart(self, cart_item_id: str) -> dict[str, t.Any]:
-        headers = self.generate_headers()
         url = self.base_url + f"/api/cart-items/{cart_item_id}"
 
-        async with self.session.delete(url, headers=headers) as response:
+        async with self.session.delete(url, headers=self.headers) as response:
             logging.debug(f"{response=}")
 
     async def get_create_cart_by_id(self, userid: str) -> Cart:
-        headers = self.generate_headers()
         url = self.base_url + "/api/carts/"
         params = {
             "filters[userid][$eq]": userid,
             "populate": "cart_items.product"
         }
 
-        async with self.session.get(url, params=params, headers=headers) as response:
+        async with self.session.get(url, params=params, headers=self.headers) as response:
             payload = await response.json()
             if not payload.get("data"):
                 logging.debug("Cart not found, creating one")
@@ -121,14 +119,13 @@ class Strapi:
             return Cart(id=payload["data"][0]["documentId"], userid=userid, cart_items=products)
 
     async def create_cart_for(self, userid: str):
-        headers = self.generate_headers()
         url = self.base_url + "/api/carts/"
         params = {
             "data": {
                 "userid": str(userid)
             }
         }
-        async with self.session.post(url, json=params, headers=headers) as response:
+        async with self.session.post(url, json=params, headers=self.headers) as response:
             payload = await response.json()
             if not payload.get("data"):
                 raise ApiError("Failed to create cart")
@@ -136,18 +133,16 @@ class Strapi:
             return Cart(id=cart_data["documentId"], userid=cart_data["userid"], cart_items=[])
 
     async def get_products(self) -> dict[str, t.Any]:
-        headers = self.generate_headers()
         url = self.base_url + "/api/products"
 
-        async with self.session.get(url, headers=headers) as response:
+        async with self.session.get(url, headers=self.headers) as response:
             data = await response.json()
             return data
 
     async def get_product_by_id(self, id: str) -> dict[str, t.Any]:
-        headers = self.generate_headers()
         url = self.base_url + f"/api/products/{id}?populate=image"
 
-        async with self.session.get(url, headers=headers) as response:
+        async with self.session.get(url, headers=self.headers) as response:
             data = await response.json()
 
             product_data = {
@@ -176,12 +171,3 @@ class Strapi:
     async def close(self):
         if self._session is not None and not self._session.closed:
             await self._session.close()
-
-    def generate_headers(self, **kwargs) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-        }
-        for key, value in kwargs.items():
-            headers[key] = str(value)
-
-        return headers
