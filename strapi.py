@@ -46,7 +46,7 @@ class Strapi:
 
     async def set_email(self, userid: str, email: str) -> bool:
         cart = await self.get_create_cart_by_id(userid=userid)
-        url = self.base_url + f"/api/carts/{cart.id}"
+        url = f"{self.base_url}/api/carts/{cart.id}"
         params = {
             "data": {
                 "email": email
@@ -56,7 +56,7 @@ class Strapi:
             return response.status in (200, 204)
 
     async def add_to_cart(self, cart: Cart, product_id: str, amount: Decimal) -> dict[str, t.Any]:
-        url = self.base_url + f"/api/cart-items"
+        url = f"{self.base_url}/api/cart-items"
         logging.debug(f"inside add to cart, {cart=}")
         logging.debug(f"{product_id=}, {amount=}")
         if cart_item := cart.get_product_by_id(product_id):
@@ -86,13 +86,13 @@ class Strapi:
             return payload
 
     async def delete_from_cart(self, cart_item_id: str) -> dict[str, t.Any]:
-        url = self.base_url + f"/api/cart-items/{cart_item_id}"
+        url = f"{self.base_url}/api/cart-items/{cart_item_id}"
 
         async with self.session.delete(url, headers=self.headers) as response:
             logging.debug(f"{response=}")
 
     async def get_create_cart_by_id(self, userid: str) -> Cart:
-        url = self.base_url + "/api/carts/"
+        url = f"{self.base_url}/api/carts/"
         params = {
             "filters[userid][$eq]": userid,
             "populate": "cart_items.product"
@@ -119,7 +119,7 @@ class Strapi:
             return Cart(id=payload["data"][0]["documentId"], userid=userid, cart_items=products)
 
     async def create_cart_for(self, userid: str):
-        url = self.base_url + "/api/carts/"
+        url = f"{self.base_url}/api/carts/"
         params = {
             "data": {
                 "userid": str(userid)
@@ -133,16 +133,17 @@ class Strapi:
             return Cart(id=cart_data["documentId"], userid=cart_data["userid"], cart_items=[])
 
     async def get_products(self) -> dict[str, t.Any]:
-        url = self.base_url + "/api/products"
+        url = f"{self.base_url}/api/products"
 
         async with self.session.get(url, headers=self.headers) as response:
             data = await response.json()
             return data
 
     async def get_product_by_id(self, id: str) -> dict[str, t.Any]:
-        url = self.base_url + f"/api/products/{id}?populate=image"
+        url = f"{self.base_url}/api/products/{id}"
+        params = {"populate": "image"}
 
-        async with self.session.get(url, headers=self.headers) as response:
+        async with self.session.get(url, params=params, headers=self.headers) as response:
             data = await response.json()
 
             product_data = {
