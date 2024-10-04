@@ -15,8 +15,8 @@ class Cart:
     def get_product_by_id(self, product_id: str) -> t.Optional[CartItem]:
         return next((item for item in self.cart_items if item.product_id == product_id), None)
 
-    def total(self) -> Decimal:
-        return sum(item.total() for item in self.cart_items)
+    def get_total_price(self) -> Decimal:
+        return sum(item.get_total_price() for item in self.cart_items)
 
 
 @dataclass
@@ -27,7 +27,7 @@ class CartItem:
     name: str
     price: Decimal
 
-    def total(self) -> Decimal:
+    def get_total_price(self) -> Decimal:
         return self.amount * self.price
 
 
