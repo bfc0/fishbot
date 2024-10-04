@@ -138,7 +138,10 @@ async def show_product(callback: CallbackQuery, state: FSMContext, context: dict
                .row(InlineKeyboardButton(text="Back", callback_data="start")))
 
     await callback.answer("")
-    await callback.message.answer_photo(photo=types.BufferedInputFile(fish_data["picture"], filename="fish.png"), reply_markup=builder.as_markup(), caption=fish_data["description"])
+    await callback.message.answer_photo(
+        photo=types.BufferedInputFile(
+            fish_data["picture"], filename="fish.png"),
+        reply_markup=builder.as_markup(), caption=fish_data["description"])
     await callback.message.delete()
     await state.set_state(UserStates.handling_description)
 
